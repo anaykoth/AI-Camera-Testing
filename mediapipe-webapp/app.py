@@ -4,7 +4,7 @@ import numpy as np
 import mediapipe as mp
 import time
 import psutil
-import subprocess
+import threading
 
 app = Flask(__name__)
 
@@ -15,14 +15,32 @@ selfie_segmentation = mp_selfie_segmentation.SelfieSegmentation(model_selection=
 # Global variables for FPS and blur type
 current_fps = 30
 current_blur_type = 'Original Frame'
+blur_times = []
+cpu_response_times = []
+cpu_usages = []
+
+# Lock for thread-safe updates to shared data
+data_lock = threading.Lock()
+
+def reset_metrics():
+    global blur_times, cpu_response_times, cpu_usages
+    with data_lock:
+        blur_times = []
+        cpu_response_times = []
+        cpu_usages = []
 
 # Function to apply blurring and track performance
 def process_frame(frame, blur_type):
     frame.flags.writeable = False
+    start_cpu_time = time.process_time_ns()
     results = selfie_segmentation.process(frame)
     frame.flags.writeable = True
+    end_cpu_time = time.process_time_ns()
 
     condition = results.segmentation_mask > 0.1
+
+    # Start timing the blur operation
+    blur_start_time = time.time_ns()
 
     if blur_type == 'Box Blur':
         blurred_frame = cv2.blur(frame, (31, 31))
@@ -35,22 +53,33 @@ def process_frame(frame, blur_type):
     else:
         blurred_frame = frame
 
-    out_image = np.where(condition[..., None], frame, blurred_frame)
-    return out_image
+    # End timing the blur operation
+    blur_end_time = time.time_ns()
 
-# # Function to get GPU usage (for Intel GPUs, use a workaround)
-# def get_gpu_usage():
-#     try:
-#         # Use psutil to get GPU usage (if available, otherwise mock data)
-#         gpu_info = psutil.sensors_temperatures()
-#         if 'coretemp' in gpu_info:
-#             # Mock value based on available data; Intel doesn't provide easy GPU monitoring
-#             return gpu_info['coretemp'][0].current
-#         else:
-#             return 0  # No proper GPU info available
-#     except Exception as e:
-#         print(f"Could not retrieve GPU usage: {e}")
-#         return 0
+    out_image = np.where(condition[..., None], frame, blurred_frame)
+
+    # Calculate and store metrics
+    blur_time_ms = (blur_end_time - blur_start_time) / 1000000  # Convert to milliseconds
+    cpu_response_time_ms = (end_cpu_time - start_cpu_time) / 1000000  # Convert to milliseconds
+    cpu_usage = psutil.cpu_percent()
+
+    with data_lock:
+        blur_times.append(blur_time_ms)
+        cpu_response_times.append(cpu_response_time_ms)
+        cpu_usages.append(cpu_usage)
+
+    return out_image, blur_time_ms, cpu_response_time_ms, cpu_usage
+
+def calculate_average_metrics():
+    with data_lock:
+        if blur_times and cpu_response_times and cpu_usages:
+            avg_blur_time = sum(blur_times) / len(blur_times)
+            avg_cpu_response_time = sum(cpu_response_times) / len(cpu_response_times)
+            avg_cpu_usage = sum(cpu_usages) / len(cpu_usages)
+        else:
+            avg_blur_time = avg_cpu_response_time = avg_cpu_usage = 0
+
+    return avg_blur_time, avg_cpu_response_time, avg_cpu_usage
 
 def gen_frames():
     cap = cv2.VideoCapture(0)
@@ -60,20 +89,16 @@ def gen_frames():
             break
         
         global current_blur_type
-        blur_start_time = time.time_ns()
-        out_image = process_frame(frame, current_blur_type)
-        blur_end_time = time.time_ns()
+        out_image, blur_time_ms, cpu_response_time_ms, cpu_usage = process_frame(frame, current_blur_type)
 
         # Calculate performance metrics
-        cpu_usage = psutil.cpu_percent()
         memory_usage = psutil.virtual_memory().percent
-#        gpu_usage = get_gpu_usage()
-        blur_time_ms = (blur_end_time - blur_start_time) / 1000000
 
         # Add overlay text
-        cv2.putText(out_image, f'CPU: {cpu_usage}%', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-        cv2.putText(out_image, f'Memory: {memory_usage}%', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+        cv2.putText(out_image, f'CPU Usage: {cpu_usage}%', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+        cv2.putText(out_image, f'Memory Usage: {memory_usage}%', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
         cv2.putText(out_image, f'Blur Time: {blur_time_ms:.2f}ms', (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+        cv2.putText(out_image, f'CPU Response Time: {cpu_response_time_ms:.2f}ms', (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
         ret, buffer = cv2.imencode('.jpg', out_image)
         frame = buffer.tobytes()
@@ -104,13 +129,22 @@ def set_blur_type():
 
 @app.route('/performance_stats')
 def performance_stats():
+    avg_blur_time, avg_cpu_response_time, avg_cpu_usage = calculate_average_metrics()
+
     stats = {
         "cpu_usage": psutil.cpu_percent(),
         "memory_usage": psutil.virtual_memory().percent,
-#        "gpu_usage": get_gpu_usage(),
-        "blur_time_ms": 0  # Replace with actual calculations from your loop
+        "blur_time_ms": avg_blur_time,
+        "cpu_response_time_ms": avg_cpu_response_time,
+        "avg_cpu_usage": avg_cpu_usage
     }
     return jsonify(stats)
 
+@app.route('/reset_metrics', methods=['POST'])
+def reset_metrics_route():
+    reset_metrics()
+    return jsonify(success=True)
+
 if __name__ == '__main__':
+    reset_metrics()
     app.run(debug=True)
