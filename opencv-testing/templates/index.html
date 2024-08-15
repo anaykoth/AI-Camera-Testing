@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediaPipe Background Blurring</title>
+</head>
+<body>
+    <h1>MediaPipe Background Blurring</h1>
+    <div>
+        <h2>Video Feed</h2>
+        <img src="{{ url_for('video_feed') }}" width="720" height="480">
+    </div>
+    <div>
+        <h2>Settings</h2>
+        <label for="fps">Select FPS:</label>
+        <select id="fps">
+            <option value="10">10 FPS</option>
+            <option value="15">15 FPS</option>
+            <option value="30" selected>30 FPS</option>
+        </select>
+
+        <label for="blur_type">Select Blur Type:</label>
+        <select id="blur_type">
+            <option value="Original Frame">Original Frame</option>
+            <option value="Box Blur">Box Blur</option>
+            <option value="Median Blur">Median Blur</option>
+            <option value="Gaussian Blur">Gaussian Blur</option>
+            <option value="Bilateral Blur">Bilateral Blur</option>
+        </select>
+    </div>
+    <div>
+        <h2>Performance Stats</h2>
+        <p id="cpu_usage">CPU Usage: Loading...</p>
+        <p id="memory_usage">Memory Usage: Loading...</p>
+        <p id="blur_time">Blur Time: Loading...</p>
+        <p id="cpu_response_time">CPU Response Time: Loading...</p>
+    </div>
+    <div>
+        <h2>30-Second Averages</h2>
+        <p id="avg_blur_time">Average Blur Time (last 30s): Loading...</p>
+        <p id="avg_cpu_response_time">Average CPU Response Time (last 30s): Loading...</p>
+        <p id="avg_cpu_usage">Average CPU Usage (last 30s): Loading...</p>
+    </div>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
