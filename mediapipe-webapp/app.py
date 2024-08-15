@@ -88,7 +88,7 @@ def gen_frames():
         if not success:
             break
         
-        global current_blur_type
+        global current_blur_type, current_fps
         out_image, blur_time_ms, cpu_response_time_ms, cpu_usage = process_frame(frame, current_blur_type)
 
         # Calculate performance metrics
@@ -102,8 +102,13 @@ def gen_frames():
 
         ret, buffer = cv2.imencode('.jpg', out_image)
         frame = buffer.tobytes()
+
+        # Yield the frame and then sleep to match the desired FPS
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
+        # Add a delay to control the FPS
+        time.sleep(1 / current_fps)
 
     cap.release()
 
