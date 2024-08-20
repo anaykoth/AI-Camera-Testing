@@ -1,16 +1,11 @@
 from flask import Flask, render_template, Response, request, jsonify
 import cv2
 import numpy as np
-import mediapipe as mp
 import time
 import psutil
 import threading
 
 app = Flask(__name__)
-
-# Initialize MediaPipe
-mp_selfie_segmentation = mp.solutions.selfie_segmentation
-selfie_segmentation = mp_selfie_segmentation.SelfieSegmentation(model_selection=1)
 
 # Global variables for FPS and blur type
 current_fps = 30
@@ -29,15 +24,18 @@ def reset_metrics():
         cpu_response_times = []
         cpu_usages = []
 
+# Stack Blur implementation
+def stack_blur(image, radius):
+    img = cv2.GaussianBlur(image, (0, 0), radius)
+    return img
+
 # Function to apply blurring and track performance
 def process_frame(frame, blur_type):
     frame.flags.writeable = False
     start_cpu_time = time.process_time_ns()
-    results = selfie_segmentation.process(frame)
-    frame.flags.writeable = True
-    end_cpu_time = time.process_time_ns()
 
-    condition = results.segmentation_mask > 0.1
+    # Condition for the mask (assuming some condition; replace with your actual segmentation mask)
+    condition = np.ones(frame.shape[:2], dtype=bool)  # Example: use a full mask
 
     # Start timing the blur operation
     blur_start_time = time.time_ns()
@@ -50,6 +48,8 @@ def process_frame(frame, blur_type):
         blurred_frame = cv2.GaussianBlur(frame, (31, 31), 0)
     elif blur_type == 'Bilateral Blur':
         blurred_frame = cv2.bilateralFilter(frame, 15, 75, 75)
+    elif blur_type == 'Stack Blur':
+        blurred_frame = stack_blur(frame, 10)  # Adjust radius as needed
     else:
         blurred_frame = frame
 
@@ -60,7 +60,7 @@ def process_frame(frame, blur_type):
 
     # Calculate and store metrics
     blur_time_ms = (blur_end_time - blur_start_time) / 1000000  # Convert to milliseconds
-    cpu_response_time_ms = (end_cpu_time - start_cpu_time) / 1000000  # Convert to milliseconds
+    cpu_response_time_ms = (time.process_time_ns() - start_cpu_time) / 1000000  # Convert to milliseconds
     cpu_usage = psutil.cpu_percent()
 
     with data_lock:
