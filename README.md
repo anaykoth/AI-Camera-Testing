@@ -12,8 +12,7 @@ This repository contains three separate web applications that demonstrate real-t
     - [2. OpenCV Implementation](#2-opencv-implementation)
     - [3. TensorFlow Lite Implementation](#3-tensorflow-lite-implementation)
   - [Notes](#notes)
-  - [Contributing](#contributing)
-  - [License](#license)
+
 
 ## Prerequisites
 
@@ -99,6 +98,7 @@ The TensorFlow Lite implementation uses the DeepLabV3 model for semantic segment
 
 3. **Download and place the `deeplabv3.tflite` model in the directory:**
     Ensure the model is named `deeplabv3.tflite` or update the `app.py` accordingly.
+    Add the .tflite file to the folder and change the "model_path" to the name of the .tflite file
 
 4. **Run the Flask application:**
     ```bash
@@ -114,10 +114,6 @@ The TensorFlow Lite implementation uses the DeepLabV3 model for semantic segment
 
 - **Performance:** The performance of each implementation (MediaPipe, OpenCV, TensorFlow Lite) can vary significantly depending on your system’s hardware, particularly the CPU and GPU. The applications include real-time performance metrics to help you analyze the efficiency of each method.
 
-- **Customization:** You can customize the blur types and FPS settings via the dropdown menus in the web application. The changes will be applied in real-time as you interact with the interface.
+- **FPS** The FPS changes are not a true measure of the performance with higher or lower cameras. Code is built for the default computer camera and the FPS changes just introduces lag into the video. 
 
 - **TensorFlow Lite Model:** For the TensorFlow Lite implementation, you must download the `deeplabv3.tflite` model and place it in the corresponding directory. Make sure the model file name in the code matches the actual file name.
-
-- **Potential Issues:** If you experience any issues with performance stats not displaying correctly, ensure that you have the latest version of the required libraries installed and that your system meets the necessary hardware requirements.
-
-- **Further Development:** The applications are designed for demonstration and testing purposes. For production-level deployment, consider optimizing the code further and possibly integrating with more robust frameworks or cloud services.
