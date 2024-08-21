@@ -1,16 +1,22 @@
 from flask import Flask, render_template, Response, request, jsonify
 import cv2
 import numpy as np
-import mediapipe as mp
 import time
 import psutil
 import threading
+from detectron2.engine import DefaultPredictor
+from detectron2.config import get_cfg
+from detectron2 import model_zoo
 
 app = Flask(__name__)
 
-# Initialize MediaPipe
-mp_selfie_segmentation = mp.solutions.selfie_segmentation
-selfie_segmentation = mp_selfie_segmentation.SelfieSegmentation(model_selection=1)
+# Initialize Detectron2
+cfg = get_cfg()
+cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"))
+cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5  # Set threshold for this model
+cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
+cfg.MODEL.DEVICE = "cuda" if torch.cuda.is_available() else "cpu"  # Use GPU if available
+predictor = DefaultPredictor(cfg)
 
 # Global variables for FPS and blur type
 current_fps = 30
@@ -29,15 +35,24 @@ def reset_metrics():
         cpu_response_times = []
         cpu_usages = []
 
+def run_inference(frame):
+    outputs = predictor(frame)
+    masks = outputs["instances"].pred_masks.cpu().numpy()
+    combined_mask = np.zeros(frame.shape[:2], dtype=bool)
+    
+    # Combine all detected masks
+    for mask in masks:
+        combined_mask |= mask
+
+    return combined_mask
+
 # Function to apply blurring and track performance
 def process_frame(frame, blur_type):
     frame.flags.writeable = False
     start_cpu_time = time.process_time_ns()
-    results = selfie_segmentation.process(frame)
+    mask = run_inference(frame)
     frame.flags.writeable = True
     end_cpu_time = time.process_time_ns()
-
-    condition = results.segmentation_mask > 0.1
 
     # Start timing the blur operation
     blur_start_time = time.time_ns()
@@ -56,12 +71,12 @@ def process_frame(frame, blur_type):
     # End timing the blur operation
     blur_end_time = time.time_ns()
 
-    out_image = np.where(condition[..., None], frame, blurred_frame)
+    out_image = np.where(mask[:, :, None], frame, blurred_frame)
 
     # Calculate and store metrics
     blur_time_ms = (blur_end_time - blur_start_time) / 1000000  # Convert to milliseconds
     cpu_response_time_ms = (end_cpu_time - start_cpu_time) / 1000000  # Convert to milliseconds
-    cpu_usage = psutil.cpu_percent(interval=None)  # Avoid measuring interval time by setting it to None
+    cpu_usage = psutil.cpu_percent()
 
     with data_lock:
         blur_times.append(blur_time_ms)
@@ -95,8 +110,8 @@ def gen_frames():
         memory_usage = psutil.virtual_memory().percent
 
         # Add overlay text
-        cv2.putText(out_image, f'CPU Usage: {cpu_usage:.2f}%', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-        cv2.putText(out_image, f'Memory Usage: {memory_usage:.2f}%', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+        cv2.putText(out_image, f'CPU Usage: {cpu_usage}%', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+        cv2.putText(out_image, f'Memory Usage: {memory_usage}%', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
         cv2.putText(out_image, f'Blur Time: {blur_time_ms:.2f}ms', (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
         cv2.putText(out_image, f'CPU Response Time: {cpu_response_time_ms:.2f}ms', (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
@@ -134,11 +149,10 @@ def set_blur_type():
 
 @app.route('/performance_stats')
 def performance_stats():
-    # Use the same method to calculate averages and return as JSON
     avg_blur_time, avg_cpu_response_time, avg_cpu_usage = calculate_average_metrics()
 
     stats = {
-        "cpu_usage": cpu_usages[-1] if cpu_usages else 0,
+        "cpu_usage": psutil.cpu_percent(),
         "memory_usage": psutil.virtual_memory().percent,
         "blur_time_ms": avg_blur_time,
         "cpu_response_time_ms": avg_cpu_response_time,
