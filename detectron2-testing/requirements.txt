@@ -1,6 +1,0 @@
-Flask
-opencv-python
-numpy
-psutil
-torch
-detectron2==0.5
